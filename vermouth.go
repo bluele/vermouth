@@ -123,6 +123,13 @@ func (vm *Vermouth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	md.ServeHTTP(vm.ctx, NewResponseWriter(w), r)
 }
 
+func (vm *Vermouth) HandlerFunc() http.HandlerFunc {
+	md := build(append(vm.handlers, wrapHandler(vm.router)))
+	return func(w http.ResponseWriter, r *http.Request) {
+		md.ServeHTTP(vm.ctx, w, r)
+	}
+}
+
 // Middlewares returns registered handlers.
 func (vm *Vermouth) Middlewares() []Handler {
 	return vm.handlers
