@@ -1,11 +1,15 @@
 package vermouth
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
-	"os"
 	"strings"
+	"time"
+
+	"github.com/tylerb/graceful"
 
 	"golang.org/x/net/context"
 )
@@ -68,9 +72,54 @@ func (m middleware) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *htt
 
 // Vermouth object
 type Vermouth struct {
-	ctx      context.Context
-	router   *Router
-	handlers []Handler
+	ctx          context.Context
+	router       *Router
+	handlers     []Handler
+	ServerOption struct {
+		ReadTimeout    time.Duration // maximum duration before timing out read of the request
+		WriteTimeout   time.Duration // maximum duration before timing out write of the response
+		MaxHeaderBytes int           // maximum size of request headers, DefaultMaxHeaderBytes if 0
+		TLSConfig      *tls.Config   // optional TLS config, used by ListenAndServeTLS
+
+		// TLSNextProto optionally specifies a function to take over
+		// ownership of the provided TLS connection when an NPN
+		// protocol upgrade has occurred.  The map key is the protocol
+		// name negotiated. The Handler argument should be used to
+		// handle HTTP requests and will initialize the Request's TLS
+		// and RemoteAddr if not already set.  The connection is
+		// automatically closed when the function returns.
+		// If TLSNextProto is nil, HTTP/2 support is enabled automatically.
+		TLSNextProto map[string]func(*http.Server, *tls.Conn, http.Handler)
+
+		// ConnState specifies an optional callback function that is
+		// called when a client connection changes state. See the
+		// ConnState type and associated constants for details.
+		ConnState func(net.Conn, http.ConnState)
+
+		// ErrorLog specifies an optional logger for errors accepting
+		// connections and unexpected behavior from handlers.
+		// If nil, logging goes to os.Stderr via the log package's
+		// standard logger.
+		ErrorLog *log.Logger
+	}
+	GracefulOption struct {
+		// Timeout is the duration to allow outstanding requests to survive
+		// before forcefully terminating them.
+		Timeout time.Duration
+
+		// Limit the number of outstanding requests
+		ListenLimit int
+
+		// ShutdownInitiated is an optional callback function that is called
+		// when shutdown is initiated. It can be used to notify the client
+		// side of long lived connections (e.g. websockets) to reconnect.
+		ShutdownInitiated func()
+
+		// NoSignalHandling prevents graceful from automatically shutting down
+		// on SIGINT and SIGTERM. If set to true, you must shut down the server
+		// manually with Stop().
+		NoSignalHandling bool
+	}
 }
 
 // New creates a new independent router and middleware stack.
@@ -135,12 +184,28 @@ func (vm *Vermouth) Middlewares() []Handler {
 	return vm.handlers
 }
 
-// Run is a convenience function that runs the vermouth stack as an HTTP
-// server. The addr string takes the same format as http.ListenAndServe.
-func (vm *Vermouth) Run(addr string) {
-	l := log.New(os.Stdout, "[vermouth] ", 0)
-	l.Printf("listening on %s", addr)
-	l.Fatal(http.ListenAndServe(addr, vm))
+func (vm *Vermouth) newHTTPServer() *http.Server {
+	opt := vm.ServerOption
+	return &http.Server{
+		Handler:        vm,
+		ReadTimeout:    opt.ReadTimeout,
+		WriteTimeout:   opt.WriteTimeout,
+		MaxHeaderBytes: opt.MaxHeaderBytes,
+		TLSConfig:      opt.TLSConfig,
+		TLSNextProto:   opt.TLSNextProto,
+		ErrorLog:       opt.ErrorLog,
+	}
+}
+
+func (vm *Vermouth) newServer() *graceful.Server {
+	opt := vm.GracefulOption
+	return &graceful.Server{
+		Server:           vm.newHTTPServer(),
+		Timeout:          opt.Timeout,
+		ListenLimit:      opt.ListenLimit,
+		ConnState:        vm.ServerOption.ConnState,
+		NoSignalHandling: opt.NoSignalHandling,
+	}
 }
 
 func build(handlers []Handler) middleware {
