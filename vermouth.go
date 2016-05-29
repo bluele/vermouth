@@ -72,54 +72,57 @@ func (m middleware) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *htt
 
 // Vermouth object
 type Vermouth struct {
-	ctx          context.Context
-	router       *Router
-	handlers     []Handler
-	ServerOption struct {
-		ReadTimeout    time.Duration // maximum duration before timing out read of the request
-		WriteTimeout   time.Duration // maximum duration before timing out write of the response
-		MaxHeaderBytes int           // maximum size of request headers, DefaultMaxHeaderBytes if 0
-		TLSConfig      *tls.Config   // optional TLS config, used by ListenAndServeTLS
+	ctx      context.Context
+	router   *Router
+	handlers []Handler
+	Options  *Options
+}
 
-		// TLSNextProto optionally specifies a function to take over
-		// ownership of the provided TLS connection when an NPN
-		// protocol upgrade has occurred.  The map key is the protocol
-		// name negotiated. The Handler argument should be used to
-		// handle HTTP requests and will initialize the Request's TLS
-		// and RemoteAddr if not already set.  The connection is
-		// automatically closed when the function returns.
-		// If TLSNextProto is nil, HTTP/2 support is enabled automatically.
-		TLSNextProto map[string]func(*http.Server, *tls.Conn, http.Handler)
+// Options for vermouth app
+// This is used by initializing http.Server and graceful.Server
+type Options struct {
+	ReadTimeout    time.Duration // maximum duration before timing out read of the request
+	WriteTimeout   time.Duration // maximum duration before timing out write of the response
+	MaxHeaderBytes int           // maximum size of request headers, DefaultMaxHeaderBytes if 0
+	TLSConfig      *tls.Config   // optional TLS config, used by ListenAndServeTLS
 
-		// ConnState specifies an optional callback function that is
-		// called when a client connection changes state. See the
-		// ConnState type and associated constants for details.
-		ConnState func(net.Conn, http.ConnState)
+	// TLSNextProto optionally specifies a function to take over
+	// ownership of the provided TLS connection when an NPN
+	// protocol upgrade has occurred.  The map key is the protocol
+	// name negotiated. The Handler argument should be used to
+	// handle HTTP requests and will initialize the Request's TLS
+	// and RemoteAddr if not already set.  The connection is
+	// automatically closed when the function returns.
+	// If TLSNextProto is nil, HTTP/2 support is enabled automatically.
+	TLSNextProto map[string]func(*http.Server, *tls.Conn, http.Handler)
 
-		// ErrorLog specifies an optional logger for errors accepting
-		// connections and unexpected behavior from handlers.
-		// If nil, logging goes to os.Stderr via the log package's
-		// standard logger.
-		ErrorLog *log.Logger
-	}
-	GracefulOption struct {
-		// Timeout is the duration to allow outstanding requests to survive
-		// before forcefully terminating them.
-		Timeout time.Duration
+	// ConnState specifies an optional callback function that is
+	// called when a client connection changes state. See the
+	// ConnState type and associated constants for details.
+	ConnState func(net.Conn, http.ConnState)
 
-		// Limit the number of outstanding requests
-		ListenLimit int
+	// Timeout is the duration to allow outstanding requests to survive
+	// before forcefully terminating them.
+	GracefulTimeout time.Duration
 
-		// ShutdownInitiated is an optional callback function that is called
-		// when shutdown is initiated. It can be used to notify the client
-		// side of long lived connections (e.g. websockets) to reconnect.
-		ShutdownInitiated func()
+	// Limit the number of outstanding requests
+	ListenLimit int
 
-		// NoSignalHandling prevents graceful from automatically shutting down
-		// on SIGINT and SIGTERM. If set to true, you must shut down the server
-		// manually with Stop().
-		NoSignalHandling bool
-	}
+	// ShutdownInitiated is an optional callback function that is called
+	// when shutdown is initiated. It can be used to notify the client
+	// side of long lived connections (e.g. websockets) to reconnect.
+	ShutdownInitiated func()
+
+	// NoSignalHandling prevents graceful from automatically shutting down
+	// on SIGINT and SIGTERM. If set to true, you must shut down the server
+	// manually with Stop().
+	NoSignalHandling bool
+
+	// ErrorLog specifies an optional logger for errors accepting
+	// connections and unexpected behavior from handlers.
+	// If nil, logging goes to os.Stderr via the log package's
+	// standard logger.
+	ErrorLog *log.Logger
 }
 
 // New creates a new independent router and middleware stack.
@@ -127,6 +130,8 @@ func New() *Vermouth {
 	return &Vermouth{
 		ctx:    context.Background(),
 		router: NewRouter(),
+
+		Options: defaultOptions(),
 	}
 }
 
@@ -184,27 +189,34 @@ func (vm *Vermouth) Middlewares() []Handler {
 	return vm.handlers
 }
 
-func (vm *Vermouth) newHTTPServer() *http.Server {
-	opt := vm.ServerOption
-	return &http.Server{
+// newServer returns a new server implements http.Server.
+func (vm *Vermouth) newServer() *graceful.Server {
+	opts := vm.Options
+	if opts == nil {
+		opts = defaultOptions()
+	}
+	srv := &http.Server{
 		Handler:        vm,
-		ReadTimeout:    opt.ReadTimeout,
-		WriteTimeout:   opt.WriteTimeout,
-		MaxHeaderBytes: opt.MaxHeaderBytes,
-		TLSConfig:      opt.TLSConfig,
-		TLSNextProto:   opt.TLSNextProto,
-		ErrorLog:       opt.ErrorLog,
+		ReadTimeout:    opts.ReadTimeout,
+		WriteTimeout:   opts.WriteTimeout,
+		MaxHeaderBytes: opts.MaxHeaderBytes,
+		TLSConfig:      opts.TLSConfig,
+		TLSNextProto:   opts.TLSNextProto,
+		ErrorLog:       opts.ErrorLog,
+	}
+	return &graceful.Server{
+		Server:           srv,
+		Timeout:          opts.GracefulTimeout,
+		ListenLimit:      opts.ListenLimit,
+		ConnState:        opts.ConnState,
+		NoSignalHandling: opts.NoSignalHandling,
 	}
 }
 
-func (vm *Vermouth) newServer() *graceful.Server {
-	opt := vm.GracefulOption
-	return &graceful.Server{
-		Server:           vm.newHTTPServer(),
-		Timeout:          opt.Timeout,
-		ListenLimit:      opt.ListenLimit,
-		ConnState:        vm.ServerOption.ConnState,
-		NoSignalHandling: opt.NoSignalHandling,
+// defaultOptions returns default options.
+func defaultOptions() *Options {
+	return &Options{
+		NoSignalHandling: true,
 	}
 }
 

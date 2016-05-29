@@ -33,5 +33,6 @@ func (vm *Vermouth) observeContext(srv *graceful.Server) {
 	select {
 	case <-vm.ctx.Done():
 		srv.Stop(srv.Timeout)
+	case <-srv.StopChan():
 	}
 }
