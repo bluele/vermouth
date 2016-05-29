@@ -24,7 +24,7 @@ func refute(t *testing.T, a interface{}, b interface{}) {
 
 func TestVermouthRun(t *testing.T) {
 	// just test that Run doesn't bomb
-	go New().Run(":3000")
+	go New().Serve(":3000")
 }
 
 func TestVermouthServeHTTP(t *testing.T) {

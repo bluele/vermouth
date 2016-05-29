@@ -1,21 +1,13 @@
 package vermouth
 
 import (
-	"log"
 	"net"
-	"os"
 
 	"github.com/tylerb/graceful"
 )
 
-// Run is a convenience function that runs the vermouth stack as an HTTP
+// Serve is a convenience function that runs the vermouth stack as an HTTP
 // server. The addr string takes the same format as http.ListenAndServe.
-func (vm *Vermouth) Run(addr string) {
-	l := log.New(os.Stdout, "[vermouth] ", 0)
-	l.Printf("listening on %s", addr)
-	l.Fatal(vm.Serve(addr))
-}
-
 func (vm *Vermouth) Serve(addr string) error {
 	srv := vm.newServer()
 	srv.Addr = addr
@@ -23,12 +15,15 @@ func (vm *Vermouth) Serve(addr string) error {
 	return srv.ListenAndServe()
 }
 
+// ServeListener is like Serve, but runs vermouth on top of an arbitrary net.Listener.
 func (vm *Vermouth) ServeListener(l net.Listener) error {
 	srv := vm.newServer()
 	go vm.observeContext(srv)
 	return srv.Serve(l)
 }
 
+// observeContext observe the status for top level context object.
+// If context is done, shutdown a server gracefully.
 func (vm *Vermouth) observeContext(srv *graceful.Server) {
 	select {
 	case <-vm.ctx.Done():

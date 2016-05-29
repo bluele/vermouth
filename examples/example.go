@@ -19,5 +19,5 @@ func main() {
 	vm.Get("/", func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, ctx.Value("key").(string))
 	})
-	vm.Run(":3000")
+	vm.Serve(":3000")
 }
