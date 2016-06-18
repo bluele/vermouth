@@ -10,6 +10,8 @@ Vermouth is [net/context](https://godoc.org/golang.org/x/net/context) friendly w
 
 * include httprouter based router
 
+* graceful shutdown support
+
 ## Why?
 
 I had searched net/context based web framework. And I found kami,
@@ -67,6 +69,32 @@ HTTPHandler ->
 Middleware2 -> Middleware1 ->
 Response
 ```
+
+## Graceful shutdown support
+
+Vermouth includes context-based Graceful shutdown support.
+
+Vermouth server observe the status of context object. If `context.Done()` returns a value, vermouth will be shutdown gracefully.
+
+See following example:
+
+```go
+func main() {
+	vm := vermouth.New()
+	// This server will be shutdown after 10 sec.
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	vm.SetContext(ctx)
+
+	vm.Get("/", func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "hello")
+	})
+	vm.Serve(":3000")
+	log.Println("shutdown...")
+}
+```
+
+See detail configurations: [godoc](https://godoc.org/github.com/bluele/vermouth#Options),
+ [tylerb/graceful](https://github.com/tylerb/graceful)
 
 ## Contribution
 
