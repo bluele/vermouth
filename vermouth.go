@@ -189,8 +189,8 @@ func (vm *Vermouth) Middlewares() []Handler {
 	return vm.handlers
 }
 
-// newServer returns a new server implements http.Server.
-func (vm *Vermouth) newServer() *graceful.Server {
+// NewServer returns a new server implements http.Server.
+func (vm *Vermouth) NewServer() *graceful.Server {
 	opts := vm.Options
 	if opts == nil {
 		opts = defaultOptions()
