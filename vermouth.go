@@ -180,7 +180,7 @@ func (vm *Vermouth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (vm *Vermouth) HandlerFunc() http.HandlerFunc {
 	md := build(append(vm.handlers, wrapHandler(vm.router)))
 	return func(w http.ResponseWriter, r *http.Request) {
-		md.ServeHTTP(vm.ctx, NewResponseWriter(w), r)
+		md.ServeHTTP(vm.ctx, w, r)
 	}
 }
 
