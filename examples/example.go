@@ -1,23 +1,27 @@
 package main
 
 import (
-	"github.com/bluele/vermouth"
-	"golang.org/x/net/context"
-
 	"fmt"
+	"log"
 	"net/http"
+
+	"github.com/bluele/vermouth"
 )
+
+const addr = ":3000"
 
 func main() {
 	vm := vermouth.New()
-	vm.Use("/", func(ctx context.Context, w http.ResponseWriter, r *http.Request, next vermouth.ContextHandlerFunc) {
+	vm.Use("/", func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		fmt.Fprint(w, "start:")
 		defer fmt.Fprint(w, ":end")
 		// call next middleware
-		next(context.WithValue(ctx, "key", "value"), w, r)
+		next(w, vermouth.WithValue(r, "key", "value"))
 	})
-	vm.Get("/", func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, ctx.Value("key").(string))
+	vm.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, r.Context().Value("key").(string))
 	})
-	vm.Serve(":3000")
+
+	log.Printf("serving at %v", addr)
+	vm.Serve(addr)
 }
