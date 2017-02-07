@@ -15,10 +15,10 @@ import (
 
 // Handler is an interface that objects can implement to be registered to serve as middleware
 // in the Vermouth middleware stack.
-// ServeHTTP should yield to the next middleware in the chain by invoking the next vermouth.http.HandlerFunc
+// ServeHTTP should yield to the next middleware in the chain by invoking the next http.HandlerFunc
 // passed in.
 //
-// If the Handler writes to the ResponseWriter, the next vermouth.http.HandlerFunc should not be invoked.
+// If the Handler writes to the ResponseWriter, the next http.HandlerFunc should not be invoked.
 type Handler interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc)
 }
