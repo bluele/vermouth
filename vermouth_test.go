@@ -5,8 +5,6 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
-
-	"golang.org/x/net/context"
 )
 
 /* Test Helpers */
@@ -32,22 +30,22 @@ func TestVermouthServeHTTP(t *testing.T) {
 	response := httptest.NewRecorder()
 
 	n := New()
-	n.Use("", HandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc) {
+	n.Use("", HandlerFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		result += "foo"
-		next(ctx, w, r)
+		next(w, r)
 		result += "ban"
 	}))
-	n.Use("", HandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc) {
+	n.Use("", HandlerFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		result += "bar"
-		next(ctx, w, r)
+		next(w, r)
 		result += "baz"
 	}))
-	n.Use("", HandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc) {
+	n.Use("", HandlerFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		result += "bat"
 		w.WriteHeader(http.StatusBadRequest)
 	}))
 
-	n.ServeHTTP(response, (*http.Request)(nil))
+	n.ServeHTTP(response, httptest.NewRequest("GET", "/", nil))
 
 	expect(t, result, "foobarbatbazban")
 	expect(t, response.Code, http.StatusBadRequest)
@@ -61,7 +59,7 @@ func TestMiddlewares(t *testing.T) {
 	handlers := n.Middlewares()
 	expect(t, 0, len(handlers))
 
-	n.Use("", HandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc) {
+	n.Use("", HandlerFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -72,6 +70,6 @@ func TestMiddlewares(t *testing.T) {
 
 	// Ensures that the first handler that is in sequence behaves
 	// exactly the same as the one that was registered earlier
-	handlers[0].ServeHTTP(context.Background(), response, (*http.Request)(nil), nil)
+	handlers[0].ServeHTTP(response, httptest.NewRequest("GET", "/", nil), nil)
 	expect(t, response.Code, http.StatusOK)
 }

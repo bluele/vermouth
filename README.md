@@ -1,22 +1,14 @@
 # Vermouth
 
-Vermouth is [net/context](https://godoc.org/golang.org/x/net/context) friendly web framework. This has dead simple and flexible interface. This project is heavily inspired by [negroni](https://github.com/codegangsta/negroni) and [kami](https://github.com/guregu/kami).
+Vermouth is context friendly web framework. This has dead simple and flexible interface. This project is heavily inspired by [negroni](https://github.com/codegangsta/negroni) and [kami](https://github.com/guregu/kami).
 
 ## Features
-
-* support net/context based handler
 
 * flexible middleware stack like negroni
 
 * include httprouter based router
 
-* graceful shutdown support
-
-## Why?
-
-I had searched net/context based web framework. And I found kami,
-but it cannot support many existing net/http middleware that made by people use net/http and negroni.
-For that reason, I decide to develop a new net/context based web framework that resolve the issue.
+* context-based graceful shutdown support
 
 ## Examples
 
@@ -25,22 +17,22 @@ package main
 
 import (
 	"github.com/bluele/vermouth"
-	"golang.org/x/net/context"
 
+    "context"
 	"fmt"
 	"net/http"
 )
 
 func main() {
 	vm := vermouth.New()
-	vm.Use("/", func(ctx context.Context, w http.ResponseWriter, r *http.Request, next vermouth.ContextHandlerFunc) {
+	vm.Use("/", func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		fmt.Fprint(w, "start:")
 		defer fmt.Fprint(w, ":end")
 		// call next middleware
-		next(context.WithValue(ctx, "key", "value"), w, r)
+		next(w, vermouth.WithValue(r, "key", "value"))
 	})
-	vm.Get("/", func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, ctx.Value("key").(string))
+	vm.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, r.Context().Value("key").(string))
 	})
 	vm.Serve(":3000")
 }
@@ -72,7 +64,7 @@ Response
 
 ## Graceful shutdown support
 
-Vermouth includes context-based Graceful shutdown support.
+Vermouth includes context-based graceful shutdown support.
 
 Vermouth server observe the status of context object. If `context.Done()` returns a value, vermouth will be shutdown gracefully.
 
@@ -80,12 +72,11 @@ See following example:
 
 ```go
 func main() {
-	vm := vermouth.New()
-	// This server will be shutdown after 10 sec.
+    // This server will be shutdown after 10 sec.
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	vm.SetContext(ctx)
+	vm := vermouth.New().WithContext(ctx)
 
-	vm.Get("/", func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	vm.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "hello")
 	})
 	vm.Serve(":3000")

@@ -5,9 +5,8 @@
 package vermouth
 
 import (
+	"context"
 	"net/http"
-
-	"golang.org/x/net/context"
 )
 
 // ParamsCtxKey is a key to be used when Params object is bound to context object.
@@ -109,37 +108,37 @@ func NewRouter() *Router {
 }
 
 // GET is a shortcut for router.Handle("GET", path, handle)
-func (r *Router) GET(path string, handle ContextHandlerFunc) {
+func (r *Router) GET(path string, handle http.HandlerFunc) {
 	r.Handle("GET", path, handle)
 }
 
 // HEAD is a shortcut for router.Handle("HEAD", path, handle)
-func (r *Router) HEAD(path string, handle ContextHandlerFunc) {
+func (r *Router) HEAD(path string, handle http.HandlerFunc) {
 	r.Handle("HEAD", path, handle)
 }
 
 // OPTIONS is a shortcut for router.Handle("OPTIONS", path, handle)
-func (r *Router) OPTIONS(path string, handle ContextHandlerFunc) {
+func (r *Router) OPTIONS(path string, handle http.HandlerFunc) {
 	r.Handle("OPTIONS", path, handle)
 }
 
 // POST is a shortcut for router.Handle("POST", path, handle)
-func (r *Router) POST(path string, handle ContextHandlerFunc) {
+func (r *Router) POST(path string, handle http.HandlerFunc) {
 	r.Handle("POST", path, handle)
 }
 
 // PUT is a shortcut for router.Handle("PUT", path, handle)
-func (r *Router) PUT(path string, handle ContextHandlerFunc) {
+func (r *Router) PUT(path string, handle http.HandlerFunc) {
 	r.Handle("PUT", path, handle)
 }
 
 // PATCH is a shortcut for router.Handle("PATCH", path, handle)
-func (r *Router) PATCH(path string, handle ContextHandlerFunc) {
+func (r *Router) PATCH(path string, handle http.HandlerFunc) {
 	r.Handle("PATCH", path, handle)
 }
 
 // DELETE is a shortcut for router.Handle("DELETE", path, handle)
-func (r *Router) DELETE(path string, handle ContextHandlerFunc) {
+func (r *Router) DELETE(path string, handle http.HandlerFunc) {
 	r.Handle("DELETE", path, handle)
 }
 
@@ -151,7 +150,7 @@ func (r *Router) DELETE(path string, handle ContextHandlerFunc) {
 // This function is intended for bulk loading and to allow the usage of less
 // frequently used, non-standardized or custom methods (e.g. for internal
 // communication with a proxy).
-func (r *Router) Handle(method, path string, handle ContextHandlerFunc) {
+func (r *Router) Handle(method, path string, handle http.HandlerFunc) {
 	if path[0] != '/' {
 		panic("path must begin with '/' in path '" + path + "'")
 	}
@@ -173,7 +172,7 @@ func (r *Router) Handle(method, path string, handle ContextHandlerFunc) {
 // request handle.
 func (r *Router) Handler(method, path string, handler http.Handler) {
 	r.Handle(method, path,
-		func(ctx context.Context, w http.ResponseWriter, req *http.Request) {
+		func(w http.ResponseWriter, req *http.Request) {
 			handler.ServeHTTP(w, req)
 		},
 	)
@@ -196,7 +195,7 @@ func (r *Router) recv(w http.ResponseWriter, req *http.Request) {
 // If the path was found, it returns the handle function and the path parameter
 // values. Otherwise the third return value indicates whether a redirection to
 // the same path with an extra / without the trailing slash should be performed.
-func (r *Router) Lookup(method, path string) (ContextHandlerFunc, Params, bool) {
+func (r *Router) Lookup(method, path string) (http.HandlerFunc, Params, bool) {
 	if root := r.trees[method]; root != nil {
 		return root.getValue(path)
 	}
@@ -242,7 +241,7 @@ func (r *Router) allowed(path, reqMethod string) (allow string) {
 }
 
 // ServeHTTP makes the router implement the http.Handler interface.
-func (r *Router) ServeHTTP(ctx context.Context, w http.ResponseWriter, req *http.Request) {
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if r.PanicHandler != nil {
 		defer r.recv(w, req)
 	}
@@ -251,7 +250,8 @@ func (r *Router) ServeHTTP(ctx context.Context, w http.ResponseWriter, req *http
 
 	if root := r.trees[req.Method]; root != nil {
 		if handle, ps, tsr := root.getValue(path); handle != nil {
-			handle(NewPathContext(ctx, ps), w, req)
+			req = req.WithContext(NewPathContext(req.Context(), ps))
+			handle(w, req)
 			return
 		} else if req.Method != "CONNECT" && path != "/" {
 			code := 301 // Permanent redirect, request with GET method

@@ -1,6 +1,7 @@
 package vermouth
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
@@ -10,33 +11,24 @@ import (
 	"time"
 
 	"github.com/tylerb/graceful"
-
-	"golang.org/x/net/context"
 )
 
 // Handler is an interface that objects can implement to be registered to serve as middleware
 // in the Vermouth middleware stack.
-// ServeHTTP should yield to the next middleware in the chain by invoking the next vermouth.ContextHandlerFunc
+// ServeHTTP should yield to the next middleware in the chain by invoking the next http.HandlerFunc
 // passed in.
 //
-// If the Handler writes to the ResponseWriter, the next vermouth.ContextHandlerFunc should not be invoked.
+// If the Handler writes to the ResponseWriter, the next http.HandlerFunc should not be invoked.
 type Handler interface {
-	ServeHTTP(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc)
-}
-
-// ContextHandler is like http.Handler but supports context.
-type ContextHandler interface {
-	ServeHTTP(ctx context.Context, w http.ResponseWriter, r *http.Request)
+	ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc)
 }
 
 type (
 	// HandlerType is the type of Handlers and types that vermouth internally converts to
-	// ContextHandlerFunc. In order to provide an expressive API, this type is an alias for
+	// http.HandlerFunc. In order to provide an expressive API, this type is an alias for
 	// interface{} that is named for the purposes of documentation, however only the
 	// following concrete types are accepted:
-	// 	- func(context.Context, http.ResponseWriter, *http.Request)
 	// 	- func(http.ResponseWriter, *http.Request)
-	// 	- types that implement ContextHandler
 	// 	- types that implement http.Handler
 	HandlerType interface{}
 
@@ -45,20 +37,16 @@ type (
 	// See the Use function for important information about how vermouth middleware is run.
 	// The following concrete types are accepted:
 	// 	- types that implement Handler
-	// 	- func(context.Context, http.ResponseWriter, *http.Request, ContextHandlerFunc)
 	// 	- func(http.ResponseWriter, *http.Request, http.HandlerFunc)
 	MiddlewareType interface{}
-
-	// ContextHandlerFunc is like http.HandlerFunc with context.
-	ContextHandlerFunc func(context.Context, http.ResponseWriter, *http.Request)
 )
 
 // HandlerFunc is an adapter to allow the use of ordinary functions as Vermouth handlers.
 // If f is a function with the appropriate signature, HandlerFunc(f) is a Handler object that calls f.
-type HandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc)
+type HandlerFunc func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc)
 
-func (h HandlerFunc) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc) {
-	h(ctx, w, r, next)
+func (h HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	h(w, r, next)
 }
 
 type middleware struct {
@@ -66,8 +54,8 @@ type middleware struct {
 	next    *middleware
 }
 
-func (m middleware) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	m.handler.ServeHTTP(ctx, w, r, m.next.ServeHTTP)
+func (m middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.handler.ServeHTTP(w, r, m.next.ServeHTTP)
 }
 
 // Vermouth object
@@ -135,9 +123,9 @@ func New() *Vermouth {
 	}
 }
 
-// SetContext sets a root net/context object.
+// WithContext sets a root context object.
 // All request context will be derive from this context.
-func (vm *Vermouth) SetContext(ctx context.Context) *Vermouth {
+func (vm *Vermouth) WithContext(ctx context.Context) *Vermouth {
 	vm.ctx = ctx
 	return vm
 }
@@ -174,13 +162,13 @@ func (vm *Vermouth) Handle(method, pattern string, handler HandlerType) *Vermout
 
 func (vm *Vermouth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	md := build(append(vm.handlers, wrapHandler(vm.router)))
-	md.ServeHTTP(vm.ctx, NewResponseWriter(w), r)
+	md.ServeHTTP(NewResponseWriter(w), r.WithContext(vm.ctx))
 }
 
 func (vm *Vermouth) HandlerFunc() http.HandlerFunc {
 	md := build(append(vm.handlers, wrapHandler(vm.router)))
 	return func(w http.ResponseWriter, r *http.Request) {
-		md.ServeHTTP(vm.ctx, w, r)
+		md.ServeHTTP(w, r.WithContext(vm.ctx))
 	}
 }
 
@@ -234,10 +222,10 @@ func build(handlers []Handler) middleware {
 	return middleware{handlers[0], &next}
 }
 
-func wrapHandler(handler ContextHandler) Handler {
-	return HandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc) {
-		handler.ServeHTTP(ctx, w, r)
-		next(ctx, w, r)
+func wrapHandler(handler http.Handler) Handler {
+	return HandlerFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		handler.ServeHTTP(w, r)
+		next(w, r)
 	})
 }
 
@@ -246,33 +234,25 @@ func makeRoutingHandler(pattern string, handler Handler) Handler {
 	if !isWildcard && pattern[len(pattern)-1] != '/' {
 		pattern += "/"
 	}
-	return HandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc) {
+	return HandlerFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		if r == nil || isWildcard {
-			handler.ServeHTTP(ctx, w, r, next)
+			handler.ServeHTTP(w, r, next)
 		} else {
 			if strings.HasPrefix(r.URL.Path+"/", pattern) {
-				handler.ServeHTTP(ctx, w, r, next)
+				handler.ServeHTTP(w, r, next)
 			} else {
-				next(ctx, w, r)
+				next(w, r)
 			}
 		}
 	})
 }
 
-func wrapHandlerFunc(handler HandlerType) ContextHandlerFunc {
+func wrapHandlerFunc(handler HandlerType) http.HandlerFunc {
 	switch h := handler.(type) {
-	case func(context.Context, http.ResponseWriter, *http.Request):
-		return h
 	case func(http.ResponseWriter, *http.Request):
-		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-			h(w, r)
-		}
-	case ContextHandler:
-		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-			h.ServeHTTP(ctx, w, r)
-		}
+		return h
 	case http.Handler:
-		return func(_ context.Context, w http.ResponseWriter, r *http.Request) {
+		return func(w http.ResponseWriter, r *http.Request) {
 			h.ServeHTTP(w, r)
 		}
 	default:
@@ -284,14 +264,8 @@ func wrapMiddlewareFunc(mw MiddlewareType) Handler {
 	switch m := mw.(type) {
 	case Handler:
 		return m
-	case func(context.Context, http.ResponseWriter, *http.Request, ContextHandlerFunc):
-		return HandlerFunc(m)
 	case func(http.ResponseWriter, *http.Request, http.HandlerFunc):
-		return HandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc) {
-			m(w, r, func(w http.ResponseWriter, r *http.Request) {
-				next(ctx, w, r)
-			})
-		})
+		return HandlerFunc(m)
 	default:
 		panic(fmt.Sprintf("Unknown middleware type: %T", m))
 	}
@@ -299,7 +273,11 @@ func wrapMiddlewareFunc(mw MiddlewareType) Handler {
 
 func voidMiddleware() middleware {
 	return middleware{
-		HandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request, next ContextHandlerFunc) {}),
+		HandlerFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {}),
 		&middleware{},
 	}
+}
+
+func WithValue(r *http.Request, key, value interface{}) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), key, value))
 }
